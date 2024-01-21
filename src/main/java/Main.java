@@ -18,7 +18,7 @@ public class Main {
             serverSocket.setReuseAddress(true);
             // Wait for connection from client.
             while (true) {
-                executorService.execute(new RequestHandler(serverSocket.accept()));
+                executorService.execute(new RequestHandler(serverSocket.accept(), args));
             }
 
         } catch (IOException e) {

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 
@@ -12,6 +13,7 @@ import java.util.HashMap;
 public class RequestHandler implements Runnable {
 
     private Socket clientSocket;
+    private String[] args;
 
     @Override
     public void run() {
@@ -21,6 +23,17 @@ public class RequestHandler implements Runnable {
             HashMap<String, String> store = new HashMap<>();
             HashMap<String, LocalDateTime> expiry = new HashMap<>();
             int arrayLen = 0;
+            Path dir = null;
+            String dbfilename = null;
+
+            if (args.length > 3) {
+                if (args[0].equals("--dir")) {
+                    dir = Path.of(args[1]);
+                }
+                if (args[2].equals("--dbfilename")) {
+                    dbfilename = args[3];
+                }
+            }
 
             while ((clientCommand = bufferedReader.readLine()) != null) {
                 System.out.println("clientCommand: " + clientCommand);
@@ -70,6 +83,26 @@ public class RequestHandler implements Runnable {
                                 printWriter.print("$-1\r\n");
                                 printWriter.flush();
 
+                            }
+                            break;
+                        case "config":
+                            bufferedReader.readLine();
+                            String op = bufferedReader.readLine();
+                            switch (op) {
+                                case "get":
+                                    bufferedReader.readLine();
+                                    String param = bufferedReader.readLine();
+                                    switch (param) {
+                                        case "dir":
+                                            printWriter.print("*2\r\n$3\r\ndir\r\n$" + dir.toString().length() + "\r\n" + dir.toString() + "\r\n");
+                                            printWriter.flush();
+                                            break;
+                                        case "dbfilename":
+                                            printWriter.print("*2\r\n$10\r\ndbfilename\r\n$" + dbfilename.toString().length() + "\r\n" + dbfilename.toString() + "\r\n");
+                                            printWriter.flush();
+                                            break;
+                                    }
+                                    break;
                             }
                             break;
                     }
