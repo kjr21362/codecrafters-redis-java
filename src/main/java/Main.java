@@ -1,4 +1,6 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -18,9 +20,17 @@ public class Main {
           clientSocket = serverSocket.accept();
 
           if (clientSocket != null) {
-              PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true);
-              printWriter.print("+PONG\r\n");
-              printWriter.flush();
+              try(BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                  PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true)) {
+                  String clientCommand;
+                  while ((clientCommand = bufferedReader.readLine()) != null) {
+                      if (clientCommand.equals("ping")) {
+                      //System.out.println("clientCommand: " + clientCommand);
+                          printWriter.print("+PONG\r\n");
+                          printWriter.flush();
+                      }
+                  }
+              }
           }
         } catch (IOException e) {
           System.out.println("IOException: " + e.getMessage());
