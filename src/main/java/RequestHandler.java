@@ -87,8 +87,35 @@ public class RequestHandler implements Runnable {
                             bufferedReader.readLine();
                             String get_key = bufferedReader.readLine();
                             if (!expiry.containsKey(get_key) || expiry.get(get_key).isAfter(LocalDateTime.now())) {
-                                String get_value = store.get(get_key);
-                                printWriter.print("$" + get_value.length() + "\r\n" + get_value + "\r\n");
+                                if (store.containsKey(get_key)) {
+                                    String get_value = store.get(get_key);
+                                    printWriter.print("$" + get_value.length() + "\r\n" + get_value + "\r\n");
+                                    printWriter.flush();
+                                    break;
+                                }
+
+                                int read;
+                                while ((read = inputStream.read()) != -1) {
+                                    if (read == 0xFB) {
+                                        getLen(inputStream);
+                                        getLen(inputStream);
+                                        break;
+                                    }
+                                }
+
+                                int type = inputStream.read();
+                                int len = getLen(inputStream);
+
+                                byte[] key_bytes = new byte[len];
+                                inputStream.read(key_bytes);
+                                String key_str = new String(key_bytes);
+
+                                int value_len = getLen(inputStream);
+                                byte[] value_bytes = new byte[value_len];
+                                inputStream.read(value_bytes);
+                                String value_str = new String(value_bytes);
+                                store.put(key_str, value_str);
+                                printWriter.print("$" + value_str.length() + "\r\n" + value_str + "\r\n");
                                 printWriter.flush();
                             } else {
                                 store.remove(get_key);
