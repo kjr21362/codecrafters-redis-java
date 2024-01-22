@@ -11,10 +11,8 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @AllArgsConstructor
@@ -27,6 +25,7 @@ public class RequestHandler implements Runnable {
     public void run() {
         Path dir = Path.of("");
         String dbfilename = "test.rdb";
+        Map<String, String> store;
 
         if (args.length > 3) {
             if (args[0].equals("--dir")) {
@@ -43,12 +42,16 @@ public class RequestHandler implements Runnable {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+        try (InputStream inputStream = new FileInputStream(dbfile)) {
+            store = readRDBFile(inputStream);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
         try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-             PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true);
-             InputStream inputStream = new FileInputStream(dbfile)) {
+             PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true)) {
             String clientCommand;
-            HashMap<String, String> store = new HashMap<>();
+
             HashMap<String, LocalDateTime> expiry = new HashMap<>();
             int arrayLen = 0;
 
@@ -91,42 +94,15 @@ public class RequestHandler implements Runnable {
                             bufferedReader.readLine();
                             String get_key = bufferedReader.readLine();
                             if (!expiry.containsKey(get_key) || expiry.get(get_key).isAfter(LocalDateTime.now())) {
-                                if (store.containsKey(get_key)) {
-                                    String get_value = store.get(get_key);
-                                    printWriter.print("$" + get_value.length() + "\r\n" + get_value + "\r\n");
-                                    printWriter.flush();
-                                    break;
-                                }
-
-                                int read;
-                                while ((read = inputStream.read()) != -1) {
-                                    if (read == 0xFB) {
-                                        getLen(inputStream);
-                                        getLen(inputStream);
-                                        break;
-                                    }
-                                }
-
-                                int type = inputStream.read();
-                                int len = getLen(inputStream);
-
-                                byte[] key_bytes = new byte[len];
-                                inputStream.read(key_bytes);
-                                String key_str = new String(key_bytes);
-
-                                int value_len = getLen(inputStream);
-                                byte[] value_bytes = new byte[value_len];
-                                inputStream.read(value_bytes);
-                                String value_str = new String(value_bytes);
-                                store.put(key_str, value_str);
-                                printWriter.print("$" + value_str.length() + "\r\n" + value_str + "\r\n");
+                                String get_value = store.get(get_key);
+                                printWriter.print("$" + get_value.length() + "\r\n" + get_value + "\r\n");
                                 printWriter.flush();
+                                break;
                             } else {
                                 store.remove(get_key);
                                 expiry.remove(get_key);
                                 printWriter.print("$-1\r\n");
                                 printWriter.flush();
-
                             }
                             break;
                         case "config":
@@ -154,41 +130,15 @@ public class RequestHandler implements Runnable {
                             String db_op = bufferedReader.readLine();
                             switch (db_op) {
                                 case "*":
-                                    int read;
-                                    Set<String> keys = new HashSet<>();
-                                    while ((read = inputStream.read()) != -1) {
-                                        if (read == 0xFB) {
-                                            getLen(inputStream);
-                                            getLen(inputStream);
-                                            break;
-                                        }
-                                    }
-
-                                    while (true) {
-                                        int type = inputStream.read();
-                                        if (type == 0xFF || type == 0xFE || type == -1) break;
-
-                                        int len = getLen(inputStream);
-
-                                        byte[] key_bytes = new byte[len];
-                                        inputStream.read(key_bytes);
-                                        String parsed_key = new String(key_bytes);
-                                        int value_len = getLen(inputStream);
-                                        byte[] value_bytes = new byte[value_len];
-                                        inputStream.read(value_bytes);
-                                        String value_str = new String(value_bytes);
-                                        keys.add(parsed_key);
-                                    }
-
+                                    Set<String> keys = store.keySet();
                                     int n_keys = keys.size();
                                     StringBuilder stringBuilder = new StringBuilder();
-                                    for (String key_s: keys) {
+                                    for (String key_s : keys) {
                                         stringBuilder.append("$" + key_s.length() + "\r\n" + key_s + "\r\n");
                                     }
 
                                     printWriter.print("*" + n_keys + "\r\n" + stringBuilder);
                                     printWriter.flush();
-
                                     break;
                             }
                             break;
@@ -198,6 +148,37 @@ public class RequestHandler implements Runnable {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static Map<String, String> readRDBFile(InputStream inputStream) throws IOException {
+        int read;
+        Map<String, String> store = new HashMap<>();
+
+        while ((read = inputStream.read()) != -1) {
+            if (read == 0xFB) {
+                getLen(inputStream);
+                getLen(inputStream);
+                break;
+            }
+        }
+
+        while (true) {
+            int type = inputStream.read();
+            if (type == 0xFF || type == 0xFE || type == -1) break;
+
+            int len = getLen(inputStream);
+
+            byte[] key_bytes = new byte[len];
+            inputStream.read(key_bytes);
+            String parsed_key = new String(key_bytes);
+            int value_len = getLen(inputStream);
+            byte[] value_bytes = new byte[value_len];
+            inputStream.read(value_bytes);
+            String value_str = new String(value_bytes);
+            store.put(parsed_key, value_str);
+        }
+
+        return store;
     }
 
     private static int getLen(InputStream inputStream) throws IOException {
