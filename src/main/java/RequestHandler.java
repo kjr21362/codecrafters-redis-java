@@ -1,10 +1,14 @@
 import lombok.AllArgsConstructor;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -17,23 +21,32 @@ public class RequestHandler implements Runnable {
 
     @Override
     public void run() {
+        Path dir = Path.of("");
+        String dbfilename = "test.rdb";
+
+        if (args.length > 3) {
+            if (args[0].equals("--dir")) {
+                dir = Path.of(args[1]);
+            }
+            if (args[2].equals("--dbfilename")) {
+                dbfilename = args[3];
+            }
+        }
+
+        File dbfile = new File(dir.resolve(dbfilename).toString());
+        try {
+            dbfile.createNewFile();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
         try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-             PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true)) {
+             PrintWriter printWriter = new PrintWriter(clientSocket.getOutputStream(), true);
+             InputStream inputStream = new FileInputStream(dbfile)) {
             String clientCommand;
             HashMap<String, String> store = new HashMap<>();
             HashMap<String, LocalDateTime> expiry = new HashMap<>();
             int arrayLen = 0;
-            Path dir = null;
-            String dbfilename = null;
-
-            if (args.length > 3) {
-                if (args[0].equals("--dir")) {
-                    dir = Path.of(args[1]);
-                }
-                if (args[2].equals("--dbfilename")) {
-                    dbfilename = args[3];
-                }
-            }
 
             while ((clientCommand = bufferedReader.readLine()) != null) {
                 System.out.println("clientCommand: " + clientCommand);
@@ -105,11 +118,56 @@ public class RequestHandler implements Runnable {
                                     break;
                             }
                             break;
+                        case "keys":
+                            bufferedReader.readLine();
+                            String db_op = bufferedReader.readLine();
+                            switch (db_op) {
+                                case "*":
+                                    int read;
+                                    while ((read = inputStream.read()) != -1) {
+                                        if (read == 0xFB) {
+                                            getLen(inputStream);
+                                            getLen(inputStream);
+                                            break;
+                                        }
+                                    }
+
+                                    int type = inputStream.read();
+                                    int len = getLen(inputStream);
+
+                                    byte[] key_bytes = new byte[len];
+                                    inputStream.read(key_bytes);
+                                    String parsed_key = new String(key_bytes);
+                                    printWriter.print("*1\r\n$" + parsed_key.length() + "\r\n" + parsed_key + "\r\n");
+                                    printWriter.flush();
+
+                                    break;
+                            }
+                            break;
                     }
                 }
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static int getLen(InputStream inputStream) throws IOException {
+        int read;
+        read = inputStream.read();
+        int len_encoding_bit = (read & 0b11000000) >> 6;
+        int len = 0;
+        //System.out.println("bit: " + (read & 0x11000000));
+        if (len_encoding_bit == 0) {
+            len = read & 0b00111111;
+        } else if (len_encoding_bit == 1) {
+            int extra_len = inputStream.read();
+            len = ((read & 0b00111111) << 8) + extra_len;
+        } else if (len_encoding_bit == 2) {
+            byte[] extra_len = new byte[4];
+            inputStream.read(extra_len);
+            len = ByteBuffer.wrap(extra_len).getInt();
+        }
+        return len;
     }
 }
