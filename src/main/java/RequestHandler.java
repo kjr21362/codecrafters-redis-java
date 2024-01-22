@@ -11,7 +11,11 @@ import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @AllArgsConstructor
 public class RequestHandler implements Runnable {
@@ -151,6 +155,7 @@ public class RequestHandler implements Runnable {
                             switch (db_op) {
                                 case "*":
                                     int read;
+                                    Set<String> keys = new HashSet<>();
                                     while ((read = inputStream.read()) != -1) {
                                         if (read == 0xFB) {
                                             getLen(inputStream);
@@ -159,13 +164,29 @@ public class RequestHandler implements Runnable {
                                         }
                                     }
 
-                                    int type = inputStream.read();
-                                    int len = getLen(inputStream);
+                                    while (true) {
+                                        int type = inputStream.read();
+                                        if (type == 0xFF || type == 0xFE || type == -1) break;
 
-                                    byte[] key_bytes = new byte[len];
-                                    inputStream.read(key_bytes);
-                                    String parsed_key = new String(key_bytes);
-                                    printWriter.print("*1\r\n$" + parsed_key.length() + "\r\n" + parsed_key + "\r\n");
+                                        int len = getLen(inputStream);
+
+                                        byte[] key_bytes = new byte[len];
+                                        inputStream.read(key_bytes);
+                                        String parsed_key = new String(key_bytes);
+                                        int value_len = getLen(inputStream);
+                                        byte[] value_bytes = new byte[value_len];
+                                        inputStream.read(value_bytes);
+                                        String value_str = new String(value_bytes);
+                                        keys.add(parsed_key);
+                                    }
+
+                                    int n_keys = keys.size();
+                                    StringBuilder stringBuilder = new StringBuilder();
+                                    for (String key_s: keys) {
+                                        stringBuilder.append("$" + key_s.length() + "\r\n" + key_s + "\r\n");
+                                    }
+
+                                    printWriter.print("*" + n_keys + "\r\n" + stringBuilder);
                                     printWriter.flush();
 
                                     break;
